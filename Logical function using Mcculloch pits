@@ -1,3 +1,4 @@
+PROGRAM:
 def mc_culloch_pitts(inputs, weights, threshold):
        weighted_sum = sum(i*w for i, w in zip(inputs, weights)
     return 1 if weighted_sum >= threshold else 0
