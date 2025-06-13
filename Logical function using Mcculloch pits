@@ -1,0 +1,18 @@
+def mc_culloch_pitts(inputs, weights, threshold):
+       weighted_sum = sum(i*w for i, w in zip(inputs, weights)
+    return 1 if weighted_sum >= threshold else 0
+inputs_list = [(0,0), (0,1), (1,0), (1,1)]
+weights_and = [1, 1]
+threshold_and = 2
+print("AND function")
+for inputs in inputs_list:
+    print(f"inputs: {inputs} -> output: {mc_culloch_pitts(inputs, weights_and, threshold_and)}")
+threshold_or = 1
+print("\nOR function")
+for inputs in inputs_list:
+    print(f"inputs: {inputs} -> output: {mc_culloch_pitts(inputs, weights_or, threshold_or)}")
+threshold_not = 0
+print("\nNOT function")
+for input_val in [0, 1]:
+    output = mc_culloch_pitts([input_val], weights_not, threshold_not)
+    print(f"input: {input_val} -> output: {output}")
