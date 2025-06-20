@@ -1,0 +1,67 @@
+PROGRAM:
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import fetch_lfw_people
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras import layers, models
+import cv2
+
+# 1. Load LFW dataset with people having at least 50 images
+lfw = fetch_lfw_people(min_faces_per_person=50, resize=0.5)
+X = lfw.images
+y = lfw.target
+target_names = lfw.target_names
+num_classes = len(target_names)
+
+# Show shape
+print(f"Images shape: {X.shape}, Classes: {num_classes}, Labels: {target_names}")
+
+# 2. Preprocess
+X = X / 255.0  # normalize
+X = X[..., np.newaxis]  # add channel dimension
+y_cat = to_categorical(y, num_classes)
+
+# Split
+X_train, X_test, y_train, y_test = train_test_split(X, y_cat, test_size=0.2, random_state=42)
+
+# 3. CNN Model
+model = models.Sequential([
+    layers.Conv2D(32, (3,3), activation='relu', input_shape=X.shape[1:]),
+    layers.MaxPooling2D(2,2),
+    layers.Conv2D(64, (3,3), activation='relu'),
+    layers.MaxPooling2D(2,2),
+    layers.Flatten(),
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(num_classes, activation='softmax')
+])
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+
+# 4. Train
+history = model.fit(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
+
+# Save model
+model.save("lfw_cnn_model.h5")
+print("✅ Model saved as lfw_cnn_model.h5")
+
+# 5. Prediction function
+def predict_face(image_array):
+    image_array = cv2.resize(image_array, (X.shape[2], X.shape[1]))
+    image_array = image_array / 255.0
+    image_array = image_array[np.newaxis, ..., np.newaxis]
+    pred = model.predict(image_array)
+    pred_class = np.argmax(pred)
+    print(f"Predicted: {target_names[pred_class]} (confidence: {np.max(pred):.2f})")
+    return target_names[pred_class]
+
+# 6. Test on a sample
+idx = np.random.randint(len(X_test))
+sample = X_test[idx].squeeze()
+plt.imshow(sample, cmap='gray')
+plt.title("Predicted: " + predict_face(sample))
+plt.axis("off")
+plt.show()
