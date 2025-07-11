@@ -1,0 +1,66 @@
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import Adam
+import os
+
+# Paths
+train_dir = "dataset/train"
+val_dir = "dataset/val"
+
+# Image settings
+IMG_SIZE = (224, 224)
+BATCH_SIZE = 32
+
+# Data generators
+train_datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
+val_datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
+
+train_gen = train_datagen.flow_from_directory(
+    train_dir, target_size=IMG_SIZE, batch_size=BATCH_SIZE, class_mode='categorical'
+)
+
+val_gen = val_datagen.flow_from_directory(
+    val_dir, target_size=IMG_SIZE, batch_size=BATCH_SIZE, class_mode='categorical'
+)
+
+# Load pre-trained MobileNetV2 (exclude top)
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model.trainable = False  # Freeze base model
+
+# Add custom classification layers
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(128, activation='relu')(x)
+output = Dense(train_gen.num_classes, activation='softmax')(x)
+
+model = Model(inputs=base_model.input, outputs=output)
+
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train the model
+model.fit(
+    train_gen,
+    epochs=5,
+    validation_data=val_gen
+)
+
+# Save model
+model.save("transfer_model.h5")
+from tensorflow.keras.preprocessing import image
+import numpy as np
+
+img_path = 'test_image.jpg'
+img = image.load_img(img_path, target_size=IMG_SIZE)
+img_array = image.img_to_array(img)
+img_array = preprocess_input(img_array)
+img_array = np.expand_dims(img_array, axis=0)
+
+pred = model.predict(img_array)
+predicted_class = list(train_gen.class_indices.keys())[np.argmax(pred)]
+
+print("Predicted class:", predicted_class)
