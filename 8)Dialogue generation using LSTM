@@ -1,0 +1,93 @@
+PROGRAM:
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Embedding
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# -----------------------------
+# 1. Sample dialogue dataset
+# -----------------------------
+dialogues = [
+    "Hi, how are you?",
+    "I am fine, thank you.",
+    "What about you?",
+    "I am doing well.",
+    "That’s good to hear.",
+    "Yes, it is!",
+]
+
+# Combine all dialogues into one text
+text = " ".join(dialogues).lower()
+
+# -----------------------------
+# 2. Character Index Mapping
+# -----------------------------
+chars = sorted(list(set(text)))
+char_to_idx = {c: i for i, c in enumerate(chars)}
+idx_to_char = {i: c for i, c in enumerate(chars)}
+
+vocab_size = len(chars)
+print("Vocabulary size:", vocab_size)
+
+# -----------------------------
+# 3. Prepare training sequences
+# -----------------------------
+seq_length = 40
+sequences = []
+next_chars = []
+
+for i in range(len(text) - seq_length):
+    seq = text[i:i+seq_length]
+    next_c = text[i+seq_length]
+    sequences.append([char_to_idx[c] for c in seq])
+    next_chars.append(char_to_idx[next_c])
+
+X = np.array(sequences)
+y = to_categorical(next_chars, num_classes=vocab_size)
+
+# -----------------------------
+# 4. Build LSTM Model
+# -----------------------------
+model = Sequential()
+model.add(Embedding(vocab_size, 50, input_length=seq_length))
+model.add(LSTM(128, return_sequences=False))
+model.add(Dense(vocab_size, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.summary()
+
+# -----------------------------
+# 5. Train Model
+# -----------------------------
+model.fit(X, y, batch_size=64, epochs=50, verbose=1)
+
+# -----------------------------
+# 6. Generate Dialogue
+# -----------------------------
+def generate_text(seed_text, gen_length=100):
+    seed_text = seed_text.lower()
+    generated = seed_text
+
+    for _ in range(gen_length):
+        # Convert seed text to sequence
+        sequence = [char_to_idx.get(c, 0) for c in seed_text[-seq_length:]]
+        sequence = pad_sequences([sequence], maxlen=seq_length)
+        
+        # Predict next char
+        pred = model.predict(sequence, verbose=0)
+        next_index = np.argmax(pred)
+        next_char = idx_to_char[next_index]
+
+        # Append
+        generated += next_char
+        seed_text += next_char
+    
+    return generated
+
+# -----------------------------
+# 7. Test Dialogue Generation
+# -----------------------------
+print("Generated Dialogue:")
+print(generate_text("hi, how are"))
