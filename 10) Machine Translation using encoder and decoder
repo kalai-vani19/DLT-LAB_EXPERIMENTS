@@ -1,0 +1,142 @@
+PROGRAM:
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, LSTM, Dense
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# -----------------------------
+# 1. Sample parallel dataset (English → French)
+# -----------------------------
+english_sentences = [
+    "hello", "how are you", "good morning", "i love you", "thank you", "good night"
+]
+french_sentences = [
+    "bonjour", "comment ça va", "bonjour", "je t'aime", "merci", "bonne nuit"
+]
+
+# Add start & end tokens for decoder
+french_sentences = ["<start> " + s + " <end>" for s in french_sentences]
+
+# -----------------------------
+# 2. Tokenize and prepare sequences
+# -----------------------------
+# English tokenizer
+eng_tokenizer = Tokenizer()
+eng_tokenizer.fit_on_texts(english_sentences)
+eng_sequences = eng_tokenizer.texts_to_sequences(english_sentences)
+eng_word_index = eng_tokenizer.word_index
+max_eng_len = max(len(s) for s in eng_sequences)
+num_encoder_tokens = len(eng_word_index) + 1
+
+# French tokenizer
+fr_tokenizer = Tokenizer()
+fr_tokenizer.fit_on_texts(french_sentences)
+fr_sequences = fr_tokenizer.texts_to_sequences(french_sentences)
+fr_word_index = fr_tokenizer.word_index
+max_fr_len = max(len(s) for s in fr_sequences)
+num_decoder_tokens = len(fr_word_index) + 1
+
+# Padding
+encoder_input_data = pad_sequences(eng_sequences, maxlen=max_eng_len, padding='post')
+decoder_input_data = pad_sequences(fr_sequences, maxlen=max_fr_len, padding='post')
+
+# Decoder target data (shifted by 1)
+decoder_target_data = np.zeros_like(decoder_input_data)
+decoder_target_data[:, :-1] = decoder_input_data[:, 1:]
+
+# -----------------------------
+# 3. Build Encoder–Decoder Model
+# -----------------------------
+latent_dim = 256
+
+# Encoder
+encoder_inputs = Input(shape=(None,))
+enc_emb = tf.keras.layers.Embedding(num_encoder_tokens, latent_dim)(encoder_inputs)
+encoder_lstm = LSTM(latent_dim, return_state=True)
+encoder_outputs, state_h, state_c = encoder_lstm(enc_emb)
+encoder_states = [state_h, state_c]
+
+# Decoder
+decoder_inputs = Input(shape=(None,))
+dec_emb = tf.keras.layers.Embedding(num_decoder_tokens, latent_dim)(decoder_inputs)
+decoder_lstm = LSTM(latent_dim, return_sequences=True, return_state=True)
+decoder_outputs, _, _ = decoder_lstm(dec_emb, initial_state=encoder_states)
+decoder_dense = Dense(num_decoder_tokens, activation='softmax')
+decoder_outputs = decoder_dense(decoder_outputs)
+
+# Seq2Seq Model
+model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+model.summary()
+
+# -----------------------------
+# 4. Train Model
+# -----------------------------
+history = model.fit(
+    [encoder_input_data, decoder_input_data],
+    np.expand_dims(decoder_target_data, -1),
+    batch_size=16,
+    epochs=500,
+    verbose=0
+)
+
+print("Training complete!")
+
+# -----------------------------
+# 5. Inference Models (for translation)
+# -----------------------------
+# Encoder inference
+encoder_model = Model(encoder_inputs, encoder_states)
+
+# Decoder inference
+decoder_state_input_h = Input(shape=(latent_dim,))
+decoder_state_input_c = Input(shape=(latent_dim,))
+decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+
+dec_emb2 = tf.keras.layers.Embedding(num_decoder_tokens, latent_dim)(decoder_inputs)
+decoder_outputs2, state_h2, state_c2 = decoder_lstm(dec_emb2, initial_state=decoder_states_inputs)
+decoder_outputs2 = decoder_dense(decoder_outputs2)
+decoder_states2 = [state_h2, state_c2]
+
+decoder_model = Model([decoder_inputs] + decoder_states_inputs, [decoder_outputs2] + decoder_states2)
+
+# -----------------------------
+# 6. Translation function
+# -----------------------------
+reverse_fr_index = {i: w for w, i in fr_word_index.items()}
+
+def translate_sentence(input_sentence):
+    seq = eng_tokenizer.texts_to_sequences([input_sentence])
+    seq = pad_sequences(seq, maxlen=max_eng_len, padding="post")
+    states_value = encoder_model.predict(seq)
+
+    target_seq = np.array([[fr_word_index["<start>"]]])
+    stop_condition = False
+    decoded_sentence = ""
+
+    while not stop_condition:
+        output_tokens, h, c = decoder_model.predict([target_seq] + states_value)
+
+        sampled_token_index = np.argmax(output_tokens[0, -1, :])
+        sampled_word = reverse_fr_index.get(sampled_token_index, "")
+
+        if sampled_word == "<end>" or len(decoded_sentence.split()) > max_fr_len:
+            stop_condition = True
+        else:
+            decoded_sentence += " " + sampled_word
+
+        target_seq = np.array([[sampled_token_index]])
+        states_value = [h, c]
+
+    return decoded_sentence.strip()
+
+# -----------------------------
+# 7. Test translation
+# -----------------------------
+print("English: hello")
+print("French:", translate_sentence("hello"))
+
+print("English: thank you")
+print("French:", translate_sentence("thank you"))
