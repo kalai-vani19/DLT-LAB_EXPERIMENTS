@@ -1,0 +1,78 @@
+PROGRAM:
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.datasets import imdb
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, SimpleRNN, Dense, LSTM, GRU
+
+# -----------------------------
+# 1. Load IMDB dataset
+# -----------------------------
+vocab_size = 10000   # use top 10k words
+max_len = 200        # max length of review
+
+(x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=vocab_size)
+
+# Pad sequences so all inputs have the same length
+x_train = pad_sequences(x_train, maxlen=max_len)
+x_test = pad_sequences(x_test, maxlen=max_len)
+
+print("Training samples:", x_train.shape)
+print("Test samples:", x_test.shape)
+
+# -----------------------------
+# 2. Build RNN Model
+# -----------------------------
+model = Sequential()
+model.add(Embedding(vocab_size, 128, input_length=max_len))
+
+# You can switch between SimpleRNN, LSTM, or GRU
+model.add(SimpleRNN(128, return_sequences=False))
+# model.add(LSTM(128))
+# model.add(GRU(128))
+
+model.add(Dense(1, activation='sigmoid'))
+
+# Compile model
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.summary()
+
+# -----------------------------
+# 3. Train Model
+# -----------------------------
+history = model.fit(x_train, y_train, validation_split=0.2, 
+                    epochs=5, batch_size=64, verbose=1)
+
+# -----------------------------
+# 4. Evaluate Model
+# -----------------------------
+loss, acc = model.evaluate(x_test, y_test, verbose=0)
+print(f"Test Accuracy: {acc*100:.2f}%")
+
+# -----------------------------
+# 5. Prediction Function
+# -----------------------------
+word_index = imdb.get_word_index()
+index_word = {v+3: k for k, v in word_index.items()}
+index_word[0], index_word[1], index_word[2], index_word[3] = "<PAD>", "<START>", "<UNK>", "<UNUSED>"
+
+def decode_review(encoded_review):
+    return " ".join([index_word.get(i, "?") for i in encoded_review])
+
+def predict_sentiment(review):
+    # Convert words to indices
+    words = review.lower().split()
+    encoded = [word_index.get(w, 2) for w in words]  # 2 = <UNK>
+    padded = pad_sequences([encoded], maxlen=max_len)
+    pred = model.predict(padded)[0][0]
+    sentiment = "Positive 😀" if pred > 0.5 else "Negative 😞"
+    return sentiment, pred
+
+# -----------------------------
+# 6. Test with a custom review
+# -----------------------------
+sample_review = "The movie was absolutely wonderful and inspiring"
+sentiment, score = predict_sentiment(sample_review)
+print(f"Review: {sample_review}")
+print(f"Predicted Sentiment: {sentiment} (Score: {score:.3f})")
